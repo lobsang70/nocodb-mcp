@@ -1,5 +1,6 @@
 import { NocoDBClient } from "../nocodb-api.js";
 import { Tool } from "./database.js";
+import { ColumnUpdate } from "../column-update.js";
 
 export const tableTools: Tool[] = [
   {
@@ -374,6 +375,54 @@ export const tableTools: Tool[] = [
     },
   },
   {
+    name: "update_column",
+    description:
+      "Update an existing column by ID. Send only changed properties in updates. Type changes and removing select options can affect existing data.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        column_id: { type: "string", minLength: 1 },
+        updates: {
+          type: "object",
+          minProperties: 1,
+          additionalProperties: false,
+          properties: {
+            title: { type: "string", minLength: 1 },
+            column_name: { type: "string", minLength: 1 },
+            uidt: { type: "string", minLength: 1 },
+            dt: { type: "string", minLength: 1 },
+            description: { type: ["string", "null"] },
+            rqd: { type: "boolean" },
+            unique: { type: "boolean" },
+            un: { type: "boolean" },
+            cdf: { type: ["string", "number", "boolean", "null"] },
+            np: { type: "integer", minimum: 0 },
+            ns: { type: "integer", minimum: 0 },
+            dtx: { type: "string" },
+            meta: { type: ["object", "null"] },
+            colOptions: {
+              type: "object",
+              description:
+                "NocoDB column options; select choices use { options: [{ title, color }] }",
+            },
+          },
+        },
+      },
+      required: ["column_id", "updates"],
+      additionalProperties: false,
+    },
+    handler: async (
+      client: NocoDBClient,
+      args: { column_id: string; updates: ColumnUpdate },
+    ) => {
+      const column = await client.updateColumn(args.column_id, args.updates);
+      return {
+        column,
+        message: `Column '${column.title}' updated successfully`,
+      };
+    },
+  },
+  {
     name: "delete_column",
     description: "Delete a column from a table",
     inputSchema: {
@@ -435,4 +484,3 @@ export const tableTools: Tool[] = [
     },
   },
 ];
-

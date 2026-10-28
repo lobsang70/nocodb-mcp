@@ -1,5 +1,4 @@
 import { NocoDBClient } from "../nocodb-api.js";
-import { z } from "zod";
 
 export interface Tool {
   name: string;

@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased] - Fork
+
+### Added
+- `update_column`: validated partial column updates using the NocoDB v2 Meta API,
+  supporting direct column, parent table, and acknowledgement responses.
+- Isolated Jest tests and a stdio MCP registration test, plus GitHub Actions on
+  Node.js 18, 20, and 22. Added the missing ESLint configuration.
+
+### Fixed
+- Aggregations and grouping now scan every record page, including server-capped
+  responses and responses without page metadata.
+- Group sorting and result limits apply after counting all matching records.
+- Search scans all pages and applies offsets/limits to matches, with matching
+  result metadata and bounded result storage.
+- Failed or inconsistent pages reject operations instead of returning partial
+  results. Empty minimum/maximum return `null`.
+
+
 ## [0.2.2] - 2025-07-07
 
 ### Fixed

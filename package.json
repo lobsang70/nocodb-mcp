@@ -11,7 +11,7 @@
     "build": "tsc",
     "dev": "tsx src/index.ts",
     "start": "node dist/index.js",
-    "test": "jest",
+    "test": "npm run build && jest --runInBand",
     "lint": "eslint src --ext .ts",
     "format": "prettier --write \"src/**/*.ts\""
   },
@@ -26,11 +26,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/modelcontextprotocol/servers.git"
+    "url": "git+https://github.com/lobsang70/nocodb-mcp.git"
   },
-  "homepage": "https://github.com/modelcontextprotocol/servers/tree/main/src/nocodb",
+  "homepage": "https://github.com/lobsang70/nocodb-mcp",
   "bugs": {
-    "url": "https://github.com/modelcontextprotocol/servers/issues"
+    "url": "https://github.com/lobsang70/nocodb-mcp/issues"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^0.6.0",

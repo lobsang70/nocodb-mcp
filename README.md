@@ -2,11 +2,84 @@
 
 A Model Context Protocol (MCP) server that provides a comprehensive interface to NocoDB - the open source Airtable alternative. This server enables AI agents to interact with NocoDB databases, making it perfect for storing and managing operational data across multiple AI teams.
 
+## Fork changes
+
+This fork builds on [andrewlwn77/nocodb-mcp](https://github.com/andrewlwn77/nocodb-mcp)
+(commit `dd033c8`) and adds partial column updates and complete record pagination.
+The upstream npm package does **not** contain these changes. Build and run this
+checkout to use them:
+
+```bash
+npm ci --ignore-scripts
+npm run build
+node dist/index.js
+```
+
+In an MCP client, use `node` as the command and the absolute path to this checkout's
+`dist/index.js` as its argument, with the environment variables documented below.
+
+### Update an existing field
+
+Use `get_table_info` to find the column ID, then call:
+
+```json
+{
+  "tool": "update_column",
+  "arguments": {
+    "column_id": "column_id_here",
+    "updates": { "title": "Priority", "rqd": false }
+  }
+}
+```
+
+Updates support `title`, `column_name`, `uidt`, `dt`, `description`, `rqd`,
+`unique`, `un`, `cdf`, `np`, `ns`, `dtx`, `meta`, and `colOptions`. Unknown keys,
+empty updates, and invalid values are rejected before sending a request.
+Only supplied properties are sent to `PATCH /api/v2/meta/columns/{columnId}`;
+`false`, `0`, and `null` are preserved. Type-specific validation and permissions
+remain NocoDB's responsibility. For select choices use
+`"colOptions": { "options": [{ "title": "Low", "color": "#059669" }] }`.
+Changing a type or removing choices can affect stored values; this wrapper does
+not provide a schema dry run. Compatibility with a particular NocoDB release
+must be checked against that instance.
+
+### Pagination behavior
+
+- `aggregate` reads every record page matching `where`. Count includes all rows;
+  numeric functions retain the upstream conversion (`Number(value) || 0`). Empty
+  count/sum/average return `0`; empty minimum/maximum return `null`.
+- `group_by` counts all matching records, then sorts and applies `offset`/`limit`
+  to the groups. Sort by the grouped column or `count`, optionally prefixed with
+  `-` for descending order. Group values should be scalar fields.
+- `search_records` performs a case-insensitive substring search across all pages,
+  then applies `offset`/`limit` to matches (default limit `25`). Its `pageInfo`
+  describes matches, including their exact `totalRows`. With `fields`, only
+  returned fields are searched. The client retains only the requested window.
+- `list_records` and `query` remain explicitly paginated single-page operations.
+  Record scans use the response length to advance offsets, including when the
+  server caps page size. Without pagination metadata, scans continue until an
+  empty page. Invalid/non-advancing pagination and later-page HTTP failures
+  reject the operation rather than return a partial result.
+
+Scans make multiple requests and do not provide a transactional snapshot when
+records change concurrently. Aggregation streams pages; grouping retains one
+entry per distinct value. Search scans all pages to compute the matching count.
+
+### Automated tests
+
+`npm test` compiles TypeScript and runs focused Jest tests with an in-memory HTTP
+adapter. It requires no NocoDB server or credentials. Coverage includes MCP tool
+arguments, field update payloads and failures, server-capped pages, missing page
+metadata, aggregation, grouping, search, result windows, and later-page errors.
+The existing manual scripts under `test/` are excluded from this command; they
+may create or delete data on a real instance. GitHub Actions runs the suite on
+Node.js 18, 20, and 22.
+
 ## Features
 
 - **Database Operations**: List and manage NocoDB bases/projects
 - **Table Management**: Create, list, and delete tables with custom schemas
-- **Column Management**: Add columns to existing tables with full type support
+- **Column Management**: Add, update, and delete columns in existing tables
 - **Record CRUD**: Full create, read, update, delete operations on records
 - **Advanced Queries**: Filter, sort, search, and aggregate data
 - **View Management**: Create and use different views (Grid, Gallery, Form, etc.)
@@ -101,6 +174,7 @@ Or if installed globally:
 - `create_table` - Create a new table with custom schema
 - `delete_table` - Delete a table
 - `add_column` - Add a new column to an existing table
+- `update_column` - Update an existing column by ID with partial properties
 - `delete_column` - Delete a column from a table
 
 ### Record Operations

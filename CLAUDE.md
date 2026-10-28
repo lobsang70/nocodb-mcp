@@ -9,7 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Lint**: `npm run lint` - Run ESLint on TypeScript files
 - **Format**: `npm run format` - Format code with Prettier
 - **Start**: `npm start` - Run compiled server from dist/index.js
-- **Test**: `npm test` - Run Jest tests (no tests exist yet)
+- **Test**: `npm test` - Build and run isolated Jest tests in test/unit/
 
 ## Architecture Overview
 
@@ -42,11 +42,10 @@ This is an MCP (Model Context Protocol) server that provides a standardized inte
 
 ## Testing Approach
 
-Currently no tests exist. When adding tests:
-- Jest is already configured in package.json
-- Mock the NocoDBClient for unit testing tools
-- Test error handling and edge cases
-- Validate Zod schemas work correctly
+`npm test` builds the project and runs `test/unit/**/*.test.js` with Jest.
+The HTTP adapter is mocked; the tests need no server or credentials. Keep manual
+integration scripts in `test/` excluded from the automated suite. Add assertions
+for resulting data and outgoing API requests, including pagination and errors.
 
 ## Publishing to NPM
 

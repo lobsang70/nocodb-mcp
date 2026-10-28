@@ -2,6 +2,7 @@ import axios, { AxiosInstance, AxiosError } from "axios";
 import FormData from "form-data";
 import * as fs from "fs";
 import * as path from "path";
+import { ColumnUpdate, columnUpdateSchema } from "./column-update.js";
 import {
   NocoDBConfig,
   NocoDBBase,
@@ -138,6 +139,33 @@ export class NocoDBClient {
     await this.client.delete(`/api/v2/meta/columns/${columnId}`);
   }
 
+  async updateColumn(
+    columnId: string,
+    updates: ColumnUpdate,
+  ): Promise<NocoDBColumn> {
+    if (typeof columnId !== "string" || !columnId.trim()) {
+      throw new NocoDBError("column_id must be a non-empty string");
+    }
+    const payload = columnUpdateSchema.parse(updates);
+    const endpoint = `/api/v2/meta/columns/${encodeURIComponent(columnId)}`;
+    const response = await this.client.patch(endpoint, payload);
+    // NocoDB versions may return either the column or its parent table.
+    const column =
+      (Array.isArray(response.data?.columns)
+        ? response.data.columns.find(
+            (candidate: NocoDBColumn) => candidate.id === columnId,
+          )
+        : undefined) ??
+      (response.data?.id === columnId ? response.data : undefined);
+    if (column) return column;
+    // Some versions return only an acknowledgement; read the updated field.
+    const updatedColumn = (await this.client.get(endpoint)).data;
+    if (updatedColumn?.id !== columnId) {
+      throw new NocoDBError("Could not read the updated column");
+    }
+    return updatedColumn;
+  }
+
   // Record operations
   async createRecord(
     baseId: string,
@@ -215,6 +243,13 @@ export class NocoDBClient {
       throw new NocoDBError(`Table ${tableName} not found`);
     }
 
+    return this.getRecordPage(table.id, options);
+  }
+
+  private async getRecordPage(
+    tableId: string,
+    options?: QueryOptions,
+  ): Promise<{ list: NocoDBRecord[]; pageInfo: any }> {
     const params = new URLSearchParams();
 
     if (options?.where) params.append("where", options.where);
@@ -235,9 +270,63 @@ export class NocoDBClient {
     if (options?.viewId) params.append("viewId", options.viewId);
 
     const response = await this.client.get(
-      `/api/v2/tables/${table.id}/records?${params.toString()}`,
+      `/api/v2/tables/${tableId}/records?${params.toString()}`,
     );
     return response.data;
+  }
+
+  private async *recordPages(
+    baseId: string,
+    tableName: string,
+    options?: Pick<QueryOptions, "where" | "fields" | "viewId" | "sort">,
+  ): AsyncGenerator<NocoDBRecord[]> {
+    const tables = await this.listTables(baseId);
+    const table = tables.find(
+      (t) => t.table_name === tableName || t.title === tableName,
+    );
+    if (!table) throw new NocoDBError(`Table ${tableName} not found`);
+    let offset = 0;
+    let previousPage: number | undefined;
+    while (true) {
+      const page = await this.getRecordPage(table.id, {
+        ...options,
+        limit: 100,
+        offset,
+      });
+      if (!Array.isArray(page.list))
+        throw new NocoDBError("Invalid record page response");
+      if (page.list.length === 0) {
+        if (page.pageInfo?.isLastPage === false) {
+          throw new NocoDBError("Empty record page reports more results");
+        }
+        return;
+      }
+      const pageNumber = page.pageInfo?.page;
+      if (typeof pageNumber === "number") {
+        if (previousPage !== undefined && pageNumber <= previousPage) {
+          throw new NocoDBError("Record pagination did not advance");
+        }
+        previousPage = pageNumber;
+      }
+      yield page.list;
+      if (page.pageInfo?.isLastPage === true) return;
+      // Advance by the actual response size: servers may cap the requested limit.
+      offset += page.list.length;
+    }
+  }
+
+  private resultWindow(options?: QueryOptions, defaultLimit?: number) {
+    const offset = options?.offset ?? 0;
+    const limit = options?.limit ?? defaultLimit;
+    for (const [name, value] of [
+      ["offset", offset],
+      ["limit", limit],
+    ] as const) {
+      if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {
+        throw new NocoDBError(`${name} must be a non-negative integer`);
+      }
+    }
+    return { offset, limit };
   }
 
   async updateRecord(
@@ -328,88 +417,129 @@ export class NocoDBClient {
     query: string,
     options?: QueryOptions,
   ): Promise<{ list: NocoDBRecord[]; pageInfo: any }> {
-    // For now, use regular list with client-side filtering
-    // since NocoDB search syntax is complex
-    const records = await this.listRecords(baseId, tableName, options);
-    const filtered = records.list.filter((record) => {
-      return Object.values(record).some((value) =>
-        String(value).toLowerCase().includes(query.toLowerCase()),
-      );
-    });
-    return { list: filtered, pageInfo: records.pageInfo };
+    const { offset, limit } = this.resultWindow(options, 25);
+    const list: NocoDBRecord[] = [];
+    let totalRows = 0;
+    for await (const records of this.recordPages(baseId, tableName, {
+      where: options?.where,
+      fields: options?.fields,
+      viewId: options?.viewId,
+      sort: options?.sort,
+    })) {
+      for (const record of records) {
+        if (
+          !Object.values(record).some((value) =>
+            String(value).toLowerCase().includes(query.toLowerCase()),
+          )
+        )
+          continue;
+        if (
+          totalRows >= offset &&
+          (limit === undefined || list.length < limit)
+        ) {
+          list.push(record);
+        }
+        totalRows++;
+      }
+    }
+    return {
+      list,
+      pageInfo: {
+        totalRows,
+        page: limit ? Math.floor(offset / limit) + 1 : 1,
+        pageSize: limit,
+        isFirstPage: offset === 0,
+        isLastPage: offset + list.length >= totalRows,
+      },
+    };
   }
 
-  // Aggregate operations
+  // Aggregate across every page without retaining the full dataset in memory.
   async aggregate(
     baseId: string,
     tableName: string,
     options: AggregateOptions,
-  ): Promise<number> {
-    // For now, implement client-side aggregation
-    // as the aggregate endpoint might not be available in all versions
-    const records = await this.listRecords(baseId, tableName, {
+  ): Promise<number | null> {
+    if (!["count", "sum", "avg", "min", "max"].includes(options.func)) {
+      throw new NocoDBError(`Unknown aggregate function: ${options.func}`);
+    }
+    let count = 0;
+    let sum = 0;
+    let min = Infinity;
+    let max = -Infinity;
+    for await (const records of this.recordPages(baseId, tableName, {
       where: options.where,
-    });
-
-    const values = records.list.map((r) => Number(r[options.column_name]) || 0);
-
+    })) {
+      for (const record of records) {
+        const value = Number(record[options.column_name]) || 0;
+        count++;
+        sum += value;
+        min = Math.min(min, value);
+        max = Math.max(max, value);
+      }
+    }
     switch (options.func) {
       case "count":
-        return records.list.length;
+        return count;
       case "sum":
-        return values.reduce((a, b) => a + b, 0);
+        return sum;
       case "avg":
-        return values.length > 0
-          ? values.reduce((a, b) => a + b, 0) / values.length
-          : 0;
+        return count ? sum / count : 0;
       case "min":
-        return Math.min(...values);
+        return count ? min : null;
       case "max":
-        return Math.max(...values);
-      default:
-        throw new NocoDBError(`Unknown aggregate function: ${options.func}`);
+        return count ? max : null;
     }
   }
 
-  // Group by operation
   async groupBy(
     baseId: string,
     tableName: string,
     columnName: string,
     options?: QueryOptions,
   ): Promise<any[]> {
-    // Implement client-side grouping
-    const records = await this.listRecords(baseId, tableName, options);
-
-    const groups = new Map<any, number>();
-    records.list.forEach((record) => {
-      const value = record[columnName];
-      groups.set(value, (groups.get(value) || 0) + 1);
-    });
-
+    const { offset, limit } = this.resultWindow(options);
+    const groups = new Map<unknown, number>();
+    for await (const records of this.recordPages(baseId, tableName, {
+      where: options?.where,
+      viewId: options?.viewId,
+    })) {
+      for (const record of records) {
+        const value = record[columnName];
+        groups.set(value, (groups.get(value) || 0) + 1);
+      }
+    }
     const result = Array.from(groups.entries()).map(([value, count]) => ({
       [columnName]: value,
       count,
     }));
-
-    // Apply sorting if specified
-    if (options?.sort) {
-      const sortField = Array.isArray(options.sort)
-        ? options.sort[0]
-        : options.sort;
-      const desc = sortField.startsWith("-");
-      result.sort((a, b) => {
-        const aVal = a[columnName];
-        const bVal = b[columnName];
-        return desc ? (bVal > aVal ? 1 : -1) : aVal > bVal ? 1 : -1;
-      });
+    const sortFields = options?.sort
+      ? Array.isArray(options.sort)
+        ? options.sort
+        : options.sort.split(",")
+      : [];
+    for (const field of sortFields) {
+      if (![columnName, "count"].includes(field.replace(/^-/, ""))) {
+        throw new NocoDBError(`Cannot sort groups by ${field}`);
+      }
     }
-
-    // Apply limit and offset
-    const start = options?.offset || 0;
-    const end = options?.limit ? start + options.limit : undefined;
-
-    return result.slice(start, end);
+    result.sort((a, b) => {
+      for (const field of sortFields) {
+        const descending = field.startsWith("-");
+        const key = descending ? field.slice(1) : field;
+        const left = a[key];
+        const right = b[key];
+        if (left === right) continue;
+        const comparison =
+          left == null ? -1 : right == null ? 1 : left < right ? -1 : 1;
+        return descending ? -comparison : comparison;
+      }
+      return 0;
+    });
+    return result.slice(
+      offset,
+      limit === undefined ? undefined : offset + limit,
+    );
   }
 
   // File upload operations
@@ -446,4 +576,3 @@ export class NocoDBClient {
     return response.data;
   }
 }
-
