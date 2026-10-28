@@ -8,7 +8,7 @@ test("the stdio MCP server advertises update_column with its schema", () => {
     const client = new Client({ name: 'test', version: '1.0.0' }, { capabilities: {} });
     const transport = new StdioClientTransport({
       command: process.execPath,
-      args: ['dist/index.js'],
+      args: ['dist/index.mjs'],
       env: { ...process.env, NOCODB_API_TOKEN: 'test-token', NOCODB_BASE_URL: 'https://nocodb.invalid' },
       stderr: 'pipe',
     });

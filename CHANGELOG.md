@@ -11,6 +11,8 @@ All notable changes to this project will be documented in this file.
   Node.js 18, 20, and 22. Added the missing ESLint configuration.
 
 ### Fixed
+- Emit the MCP entry point as native ESM (`dist/index.mjs`) so its ESM SDK
+  loads on Node.js 18, while preserving CommonJS API modules.
 - Aggregations and grouping now scan every record page, including server-capped
   responses and responses without page metadata.
 - Group sorting and result limits apply after counting all matching records.

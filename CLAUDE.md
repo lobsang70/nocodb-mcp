@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Development**: `npm run dev` - Runs server with hot-reloading using tsx
 - **Lint**: `npm run lint` - Run ESLint on TypeScript files
 - **Format**: `npm run format` - Format code with Prettier
-- **Start**: `npm start` - Run compiled server from dist/index.js
+- **Start**: `npm start` - Run compiled server from dist/index.mjs
 - **Test**: `npm test` - Build and run isolated Jest tests in test/unit/
 
 ## Architecture Overview
@@ -29,7 +29,7 @@ This is an MCP (Model Context Protocol) server that provides a standardized inte
    - Consistent error handling with `NocoDBError`
    - Client-side aggregation/grouping operations
 
-3. **MCP Server Setup**: The main entry point `src/index.ts` sets up the MCP server using stdio transport and registers all tools from the tool modules.
+3. **MCP Server Setup**: The main entry point `src/index.mts` sets up the MCP server using stdio transport and registers all tools from the tool modules.
 
 4. **Type Safety**: All data structures are defined in `src/types.ts` with comprehensive TypeScript interfaces.
 

@@ -2,18 +2,18 @@
   "name": "@andrewlwn77/nocodb-mcp",
   "version": "0.2.2",
   "description": "MCP server for NocoDB - Open source Airtable alternative",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "dist/index.mjs",
+  "types": "dist/index.d.mts",
   "bin": {
-    "nocodb-mcp": "./dist/index.js"
+    "nocodb-mcp": "./dist/index.mjs"
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsx src/index.ts",
-    "start": "node dist/index.js",
+    "dev": "tsx src/index.mts",
+    "start": "node dist/index.mjs",
     "test": "npm run build && jest --runInBand",
-    "lint": "eslint src --ext .ts",
-    "format": "prettier --write \"src/**/*.ts\""
+    "lint": "eslint src --ext .ts,.mts",
+    "format": "prettier --write \"src/**/*.{ts,mts}\""
   },
   "keywords": [
     "mcp",

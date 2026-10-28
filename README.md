@@ -12,11 +12,11 @@ checkout to use them:
 ```bash
 npm ci --ignore-scripts
 npm run build
-node dist/index.js
+node dist/index.mjs
 ```
 
 In an MCP client, use `node` as the command and the absolute path to this checkout's
-`dist/index.js` as its argument, with the environment variables documented below.
+`dist/index.mjs` as its argument, with the environment variables documented below.
 
 ### Update an existing field
 
